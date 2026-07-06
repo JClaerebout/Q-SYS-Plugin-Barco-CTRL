@@ -1,0 +1,1422 @@
+PluginInfo = {
+	-- Use a tilde (~) to seperate the name into a folder
+    Name = "Barco~Barco CTRL",
+	-- Use semantic versioning
+    Version = "1.0.0.0",
+	-- Use a GUID for the Id (Note: Avoid changing the Id for a plugin once it is set)
+    Id = "9ddae16e-e281-4070-8065-82ce1ec61a6a",
+	-- The square brackets allow for a multi-line string
+    Description = [[Control Barco CTRL Walls and Compositions]],
+    Author = "Jens Claerebout",
+    ShowDebug = true
+}
+
+------------------------------- Global Variables ------------------------------
+COLORS = { 
+	["OK"] = "#00FF00",
+	[0] = "#00FF00",
+	["COMPROMISED"] = "orange",
+	[1] = "orange",
+	["FAULT"] = "red",
+	[2] = "red",
+	["NOT_PRESENT"] = "gray",
+	[3] = "gray",
+	["MISSING"] = "darkred",
+	[4] = "darkred",
+	["INITIALIZING"] = "blue",
+	[5] = "blue",
+	["GREEN"] = "#00ff00",
+	["RED"] = "#ff0000",
+	["ORANGE"] = "#ffa500",
+	["GRAY"] = "#7c7c7c",
+	["DARK_GREEN"] = "#007C00",
+}
+
+STATUS_VALUES = {
+	["OK"] = 0,
+	["COMPROMISED"] = 1,
+	["FAULT"] = 2,
+	["NOT_PRESENT"] = 3,
+	["MISSING"] = 4,
+	["INITIALIZING"] = 5,
+}
+
+ENABLE_CODE_PIN = true
+
+--------------------------------- Properties ----------------------------------
+function GetProperties()
+    local props = { }
+
+    table.insert(props, {
+        Name = "#Walls",
+        Type = "integer",
+        Value = 1,
+        Min = 1,
+        Max = 5,
+    })
+
+    return props
+end
+
+--Modify visibility based on other properties
+--[[
+    Example: 
+    if props["propertyName"].Value == "DHCP" then
+        props["someStaticIPRelatedProperty"].IsHidden = true
+    else
+        props["someStaticIPRelatedProperty"].IsHidden = false
+]]--
+function RectifyProperties(props)
+    return props
+end
+
+------------------------- Plugin Block Name and Color -------------------------
+function GetPrettyName(props)
+    return PluginInfo["Name"] .. " v" .. PluginInfo["Version"]
+end
+
+function GetColor(props)
+	return ConvertColor("#cccccc")
+end
+
+---------------------------------- Controls -----------------------------------
+function GetControls(props)
+    local ctls = { }
+
+	if ENABLE_CODE_PIN then
+		table.insert(ctls, {
+            Name = "code",
+            ControlType = "Text",
+            Count = 1,
+            PinStyle = "Input",
+            UserPin = true
+        })
+	end
+
+    table.insert(ctls, {
+        Name = "Status",
+        ControlType = "Indicator",
+		IndicatorType = "Status",
+        Count = 1,
+        UserPin = true,
+        PinStyle = "Output"
+    })
+
+    table.insert(ctls, {
+        Name = "IP",
+        ControlType = "Text",
+        Count = 1,
+        UserPin = false
+    })
+
+    table.insert(ctls, {
+        Name = "ClientID",
+        ControlType = "Text",
+        Count = 1,
+        UserPin = false
+    })
+
+    table.insert(ctls, {
+        Name = "ClientSecret",
+        ControlType = "Text",
+        Count = 1,
+        UserPin = false
+    })
+
+    table.insert(ctls, {
+        Name = "AccessToken",
+        ControlType = "Text",
+        Count = 1,
+        UserPin = false
+    })
+
+    table.insert(ctls, {
+        Name = "Compositions",
+        ControlType = "Text",
+        Count = props["#Walls"].Value,
+        UserPin = false
+    })
+
+    table.insert(ctls, {
+        Name = "WallName",
+        ControlType = "Text",
+        Count = props["#Walls"].Value,
+        UserPin = true,
+        PinStyle = "Output"
+    })
+
+    table.insert(ctls, {
+        Name = "WallPxSize",
+        ControlType = "Text",
+        Count = props["#Walls"].Value,
+        UserPin = true, 
+        PinStyle = "Output"
+    })
+
+    table.insert(ctls, {
+        Name = "WallGridSize",
+        ControlType = "Text",
+        Count = props["#Walls"].Value,
+        UserPin = true, 
+        PinStyle = "Output"
+    })
+
+    table.insert(ctls, {
+        Name = "WallManagerIP",
+        ControlType = "Text",
+        Count = props["#Walls"].Value,
+        UserPin = false
+    })
+
+    table.insert(ctls, {
+        Name = "WallManagerAuthKey",
+        ControlType = "Text",
+        Count = props["#Walls"].Value,
+        UserPin = false
+    })
+
+    table.insert(ctls, {
+        Name = "WallManagerStatus",
+        ControlType = "Indicator",
+		IndicatorType = "Status",
+        Count = props["#Walls"].Value,
+        UserPin = true,
+        PinStyle = "Output"
+    })
+
+    table.insert(ctls, {
+        Name = "WallBrightness",
+        ControlType = "Knob",
+        ControlUnit = "Integer",
+        Min = 0,
+        Max = 100,
+        Count = props["#Walls"].Value,
+        UserPin = true,
+        PinStyle = "Both"
+    })
+
+    table.insert(ctls, {
+        Name = "WallPower",
+        ControlType = "Button",
+        ButtonType = "Toggle",
+        Count = props["#Walls"].Value,
+        UserPin = true,
+        PinStyle = "Both",
+        Icon = "Power",
+    })
+
+    return ctls
+end
+
+------------------------------- Control Layout --------------------------------
+function GetControlLayout(props)
+	-- Uncomment the next line if you are using multiple pages
+	local currentPage = props["page_index"].Value
+    local wallCount = math.ceil(props["#Walls"].Value)
+
+    -- Q-SYS omits the numeric suffix when a control's Count is exactly 1.
+    local function WallControlName(name, index)
+        if wallCount == 1 then
+            return name
+        end
+        return name .. " " .. index
+    end
+
+    local layout = { }
+
+	if ENABLE_CODE_PIN then
+		layout["code"] = 
+		{
+			PrettyName = "Code",
+			Style = "None"
+		}
+	end
+
+    local graphics = { }
+
+    LogoBase64 = "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"
+
+    if currentPage == 1 then
+        table.insert(graphics, {
+            Type = "GroupBox",
+            Position = { 14,14 },
+            Size = {500,475},
+            StrokeColor = "black",
+            StrokeWidth = 2,
+            CornerRadius = 10,
+        })
+
+        table.insert(graphics, {
+            Type = "Image", -- PNG,JPEG
+            Image = LogoBase64,
+            Position = {127,37},
+            Size = {271,63}
+        })
+
+        table.insert(graphics, {
+            Type = "Label",
+			Position = { 127,100 },
+			Size = {271,34},
+            Text = "CTRL",
+            TextSize = 20,
+            HTextAlign = "Center"
+        })
+        table.insert(graphics, {
+            Type = "Label",
+			Position = { 29,160 },
+			Size = {467,34},
+            Text = "IP",
+            TextSize = 20,
+            HTextAlign = "Center"
+        })
+        table.insert(graphics, {
+            Type = "Label",
+			Position = { 29,233 },
+			Size = {467,34},
+            Text = "Client ID",
+            TextSize = 20,
+            HTextAlign = "Center"
+        })
+        table.insert(graphics, {
+            Type = "Label",
+			Position = { 29,306 },
+			Size = {467,34},
+            Text = "Client Secret",
+            TextSize = 20,
+            HTextAlign = "Center"
+        })
+        table.insert(graphics, {
+            Type = "Label",
+			Position = { 29,382 },
+			Size = {467,34},
+            Text = "Status",
+            TextSize = 20,
+            HTextAlign = "Center"
+        })
+
+        layout["Status"] = 
+        {
+            PrettyName = "Status",
+            Position = { 29,416 },
+            Size = { 467,51 },
+            Style = "text",
+            TextFontSize = 15,
+        }
+        layout["IP"] = 
+        {
+            PrettyName = "IP",
+            Position = { 29,194 },
+            Size = { 467,34 },
+            Style = "Text",
+            TextFontSize = 15,
+        }
+        layout["ClientID"] = 
+        {
+            PrettyName = "Client ID",
+            Position = { 29,267 },
+            Size = { 467,34 },
+            Style = "Text",
+            TextFontSize = 15,
+        }
+        layout["ClientSecret"] = 
+        {
+            PrettyName = "Client Secret",
+            Position = { 29,340 },
+            Size = { 467,34 },
+            Style = "Text",
+            TextFontSize = 15,
+        }
+
+    else
+        table.insert(graphics, {
+            Type = "GroupBox",
+            Position = { 14,14 },
+            Size = {500,987},
+            StrokeColor = "black",
+            StrokeWidth = 2,
+            CornerRadius = 10,
+        })
+
+        table.insert(graphics, {
+            Type = "Label",
+			Position = { 32,139 },
+			Size = {465,26},
+            Text = "Composition:",
+            TextSize = 20,
+            HTextAlign = "Center"
+        })
+        table.insert(graphics, {
+            Type = "Label",
+			Position = { 32,422 },
+			Size = {465,39},
+            Text = "Wall Manager IP",
+            TextSize = 20,
+            HTextAlign = "Center"
+        })
+        table.insert(graphics, {
+            Type = "Label",
+			Position = { 32,497 },
+			Size = {465,39},
+            Text = "Wall Manager Auth Key",
+            TextSize = 20,
+            HTextAlign = "Center"
+        })
+        table.insert(graphics, {
+            Type = "Label",
+			Position = { 32,581 },
+			Size = {465,39},
+            Text = "Wall Manager Status",
+            TextSize = 20,
+            HTextAlign = "Center"
+        })
+        table.insert(graphics, {
+            Type = "Label",
+			Position = { 32,679 },
+			Size = {465,39},
+            Text = "Wall Brightness",
+            TextSize = 20,
+            HTextAlign = "Center"
+        })
+        table.insert(graphics, {
+            Type = "Label",
+			Position = { 32,785 },
+			Size = {465,39},
+            Text = "Wall Power",
+            TextSize = 20,
+            HTextAlign = "Center"
+        })
+
+        local groupIndex = (currentPage - 1)
+
+        layout[WallControlName("WallName", groupIndex)] = 
+        {
+            PrettyName = "Wall Name~Wall Name " .. (groupIndex),
+            Position = { 32,22 },
+            Size = { 465,36 },
+            Style = "Text",
+            TextFontSize = 20,
+            Color = {0, 0, 0, 0},
+            TextColor = {0, 0, 0},
+            StrokeWidth = 0,
+            StrokeColor = {0, 0, 0, 0},
+        }
+        layout[WallControlName("WallPxSize", groupIndex)] = 
+        {
+            PrettyName = "Wall Pixel Size~Wall Pixel Size " .. (groupIndex),
+            Position = { 32,58 },
+            Size = { 465,36 },
+            Style = "Text",
+            TextFontSize = 20,
+            Color = {0, 0, 0, 0},
+            TextColor = {0, 0, 0},
+            StrokeWidth = 0,
+            StrokeColor = {0, 0, 0, 0},
+        }
+        layout[WallControlName("WallGridSize", groupIndex)] = 
+        {
+            PrettyName = "Wall Grid Size~Wall Grid Size " .. (groupIndex),
+            Position = { 32,93 },
+            Size = { 465,36 },
+            Style = "Text",
+            TextFontSize = 20,
+            Color = {0, 0, 0, 0},
+            TextColor = {0, 0, 0},
+            StrokeWidth = 0,
+            StrokeColor = {0, 0, 0, 0},
+        }
+        layout[WallControlName("Compositions", groupIndex)] = 
+        {
+            PrettyName = "Compositions~Compositions " .. (groupIndex),
+            Position = { 32,167 },
+            Size = { 465,235 },
+            Style = "ListBox",
+            TextFontSize = 20,
+        }
+        layout[WallControlName("WallManagerIP", groupIndex)] = 
+        {
+            PrettyName = "Wall Manager IP~Wall Manager IP " .. (groupIndex),
+            Position = { 32,461 },
+            Size = { 465,36 },
+            Style = "Text",
+            TextFontSize = 15,
+        }
+        layout[WallControlName("WallManagerAuthKey", groupIndex)] = 
+        {
+            PrettyName = "Wall Manager Authentication Key~Wall Manager Authentication Key " .. (groupIndex),
+            Position = { 32,536 },
+            Size = { 465,36 },
+            Style = "Text",
+            TextFontSize = 15,
+        }
+        layout[WallControlName("WallManagerStatus", groupIndex)] = 
+        {
+            PrettyName = "Wall Manager Status~Wall Manager Status " .. (groupIndex),
+            Position = { 32,620 },
+            Size = { 465,36 },
+            Style = "Text",
+            TextFontSize = 15,
+        }
+        layout[WallControlName("WallBrightness", groupIndex)] = 
+        {
+            PrettyName = "Wall Brightness~Wall Brightness " .. (groupIndex),
+            Position = { 32,718 },
+            Size = { 465,51 },
+            Style = "Fader",
+        }
+        layout[WallControlName("WallPower", groupIndex)] = 
+        {
+            PrettyName = "Wall Power~Wall Power " .. (groupIndex),
+            Position = { 215,852 },
+            Size = { 100,100 },
+            Style = "Button",
+            CornerRadius = 50,
+        }
+
+
+    end
+
+    return layout, graphics
+end
+
+---------------------------- Other Plugin Functions ---------------------------
+
+function GetPins(props)
+	local pins = { }
+  
+	return pins
+end
+
+
+function GetPages(props)
+    local pages = {}
+
+    table.insert(pages, { name = "Setup" })
+    for i = 1, math.ceil(props["#Walls"].Value) do
+        table.insert(pages, { name = "Wall " .. i })
+    end
+
+    return pages
+end
+
+function GetComponents(props)
+	local components = { }
+
+	return components
+end
+
+function GetWiring(props)
+	local wiring = { }
+  
+	return wiring
+end
+
+------------------------------ Local Functions --------------------------------
+function HEXtoDEC(hex)
+	hex = string.upper(hex)
+	local b1 = string.byte(string.sub(hex, 1, 1))
+	local b2 = string.byte(string.sub(hex, 2, 2))
+  
+	return( (b1<=57 and b1-48 or b1-55)*16 + (b2<=57 and b2-48 or b2-55) )
+end
+
+function ConvertColor(c)
+	local t = {}
+	t[1] = HEXtoDEC(string.sub(c,2,3))
+	t[2] = HEXtoDEC(string.sub(c,4,5))
+	t[3] = HEXtoDEC(string.sub(c,6,7))
+	return t
+end
+
+local function funcSetStatus(value, text)
+    Controls.Status.Value = value
+    Controls.Status.String = text
+end
+
+local function funcUrlEncode(value)
+    return tostring(value):gsub("[^%w%-_%.~]", function(character)
+        return string.format("%%%02X", string.byte(character))
+    end)
+end
+
+local function funcJsonValue(value)
+    return rapidjson.encode(tostring(value or ""))
+end
+
+local function funcGetWallControl(controlName, index)
+    local control = Controls[controlName]
+    if not control then
+        return nil
+    end
+
+    if WALL_CONTROL_COUNT == 1 then
+        return index == 1 and control or nil
+    end
+
+    return control[index]
+end
+
+local function funcSetWallManagerValue(controlName, index, value)
+    local control = funcGetWallControl(controlName, index)
+    if control then
+        wallManagerControlUpdatesInProgress[index][controlName] = true
+        control.Value = value
+        wallManagerControlUpdatesInProgress[index][controlName] = false
+    end
+end
+
+local function funcSetWallManagerStatus(index, value, text)
+    local control = funcGetWallControl("WallManagerStatus", index)
+    if control then
+        control.Value = value
+        control.String = text
+    end
+end
+
+local function funcWallManagerConfigured(index)
+    local ipControl = funcGetWallControl("WallManagerIP", index)
+    local authKeyControl = funcGetWallControl("WallManagerAuthKey", index)
+    return wallsByIndex[index] ~= nil
+        and ipControl
+        and ipControl.String ~= ""
+        and authKeyControl
+        and authKeyControl.String ~= ""
+end
+
+local function funcClampBrightness(value)
+    local brightness = tonumber(value) or 0
+    if brightness < 0 then return 0 end
+    if brightness > 100 then return 100 end
+    return math.floor(brightness)
+end
+
+local function funcClampPower(value)
+    return (tonumber(value) or 0) == 0 and 0 or 1
+end
+
+local function funcPowerToText(value)
+    return funcClampPower(value) == 1 and "on" or "idle"
+end
+
+local function funcPowerTextToValue(value)
+    return tostring(value or ""):lower() == "on" and 1 or 0
+end
+
+local function funcLuaPatternEscape(value)
+    return tostring(value):gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
+end
+
+local function funcExtractHeaderValue(headers, headerName)
+    if type(headers) == "string" then
+        local escapedHeaderName = funcLuaPatternEscape(headerName)
+        return headers:match("[\r\n]" .. escapedHeaderName .. ":%s*([^\r\n]+)")
+            or headers:match("^" .. escapedHeaderName .. ":%s*([^\r\n]+)")
+    end
+
+    if type(headers) ~= "table" then
+        return nil
+    end
+
+    local target = headerName:lower()
+    for key, value in pairs(headers) do
+        if type(value) == "table" then
+            local name = value.Name or value.name or value.Key or value.key
+            local headerValue = value.Value or value.value
+            if name and tostring(name):lower() == target then
+                return tostring(headerValue or "")
+            end
+        end
+
+        if tostring(key):lower() == target then
+            if type(value) == "table" then
+                return table.concat(value, "; ")
+            end
+            return tostring(value)
+        end
+    end
+    return nil
+end
+
+local function funcExtractWallManagerSid(headers, data)
+    local cookie = funcExtractHeaderValue(headers, "Set-Cookie") or ""
+    local sid = cookie:match("[Ss][Ii][Dd]=([^;%s]+)")
+    if sid and sid ~= "" then
+        return sid
+    end
+
+    local decoded, response = pcall(rapidjson.decode, data or "")
+    if decoded and type(response) == "table" then
+        return response.sid or response.sessionId or ""
+    end
+    return ""
+end
+
+local function funcScheduleTokenRefresh(delay)
+    tokenRefreshTimer:Start(math.max(TOKEN_RETRY_SECONDS, delay))
+end
+
+local function funcCredentialsAreCurrent(requestIP, requestClientID, requestClientSecret)
+    return Controls.IP.String == requestIP
+        and Controls.ClientID.String == requestClientID
+        and Controls.ClientSecret.String == requestClientSecret
+end
+
+function funcGetToken()
+    -- Read the controls here rather than relying on the values at script start.
+    ip = Controls.IP.String
+    clientID = Controls.ClientID.String
+    clientSecret = Controls.ClientSecret.String
+
+    if ip == "" or clientID == "" or clientSecret == "" then
+        accessToken = ""
+        tokenExpiresAt = 0
+        tokenRefreshTimer:Stop()
+        compositionPollTimer:Stop()
+        funcSetStatus(1, "incomplete")
+        return
+    end
+
+    -- A valid token is retained until it is within one minute of expiry.
+    if accessToken ~= "" and os.time() < (tokenExpiresAt - TOKEN_REFRESH_MARGIN_SECONDS) then
+        return accessToken
+    end
+
+    if tokenRequestInProgress then
+        return
+    end
+
+    tokenRequestInProgress = true
+
+    local requestIP = ip
+    local requestClientID = clientID
+    local requestClientSecret = clientSecret
+    local url = "https://" .. requestIP .. "/auth/realms/OCS/protocol/openid-connect/token"
+    local body = "grant_type=client_credentials"
+        .. "&client_id=" .. funcUrlEncode(requestClientID)
+        .. "&client_secret=" .. funcUrlEncode(requestClientSecret)
+
+    print("Barco CTRL token request: " .. url)
+
+    HttpClient.Post {
+        Url = url,
+        Data = body,
+        Headers = { ["Content-Type"] = "application/x-www-form-urlencoded" },
+        EventHandler = function(_, code, data, err)
+        tokenRequestInProgress = false
+
+        -- Do not store a token that was requested with credentials which have since changed.
+        if not funcCredentialsAreCurrent(requestIP, requestClientID, requestClientSecret) then
+            funcGetToken()
+            return
+        end
+
+        local responseCode = tonumber(code)
+        local responseError = err
+        if not responseCode
+            or (responseError ~= nil and responseError ~= "")
+            or responseCode < 200
+            or responseCode >= 300 then
+            accessToken = ""
+            tokenExpiresAt = 0
+            if responseCode == 401 then
+                funcSetStatus(2, "Unautorized")
+            else
+                funcSetStatus(4, "Missing")
+            end
+            print(
+                "Barco CTRL token request failed: "
+                .. tostring(responseError or responseCode or "unknown error")
+                .. " (HTTP " .. tostring(code) .. ")"
+            )
+            funcScheduleTokenRefresh(TOKEN_RETRY_SECONDS)
+            return
+        end
+
+        local decoded, tokenInfo = pcall(rapidjson.decode, data)
+        local token = decoded and tokenInfo.access_token or nil
+        local expiresIn = decoded and tonumber(tokenInfo.expires_in) or DEFAULT_TOKEN_LIFETIME_SECONDS
+
+        if not token or token == "" then
+            accessToken = ""
+            tokenExpiresAt = 0
+            funcSetStatus(4, "Missing")
+            print("Barco CTRL token response did not contain an access token")
+            funcScheduleTokenRefresh(TOKEN_RETRY_SECONDS)
+            return
+        end
+
+        accessToken = token
+        tokenExpiresAt = os.time() + expiresIn
+        funcSetStatus(0, "OK")
+        print("Barco CTRL: token received")
+        funcGetCompositions()
+        funcGetWorkplaces()
+        compositionPollTimer:Start(COMPOSITION_POLL_SECONDS)
+
+        -- Match the C# behaviour: refresh 60 seconds before expiry, but never
+        -- wait less than five seconds (also handles unusually short lifetimes).
+        funcScheduleTokenRefresh(expiresIn - TOKEN_REFRESH_MARGIN_SECONDS)
+        end
+    }
+end
+
+function funcPollCompositions()
+    if accessToken ~= "" and os.time() < tokenExpiresAt then
+        funcGetCompositions()
+    else
+        funcGetToken()
+    end
+end
+
+function funcGetCompositions()
+    if accessToken == "" then
+        print("Barco CTRL compositions request skipped: token not ready")
+        return
+    end
+
+    if compositionRequestInProgress then
+        return
+    end
+
+    compositionRequestInProgress = true
+
+    local url = "https://" .. Controls.IP.String .. "/api/operate/v3/compositions?owner=all"
+    local token = accessToken
+    print("Barco CTRL compositions request: " .. url)
+
+    HttpClient.Get {
+        Url = url,
+        Headers = { ["Authorization"] = "Bearer " .. token },
+        EventHandler = function(_, code, data, err)
+            compositionRequestInProgress = false
+
+            local responseCode = tonumber(code)
+            if not responseCode
+                or (err ~= nil and err ~= "")
+                or responseCode < 200
+                or responseCode >= 300 then
+                if responseCode == 401 then
+                    funcSetStatus(2, "Unautorized")
+                else
+                    funcSetStatus(4, "Missing")
+                end
+                print(
+                    "Barco CTRL compositions request failed: "
+                    .. tostring(err or responseCode or "unknown error")
+                    .. " (HTTP " .. tostring(code) .. ")"
+                )
+                return
+            end
+
+            local decoded, response = pcall(rapidjson.decode, data)
+            if not decoded or type(response) ~= "table" or type(response.data) ~= "table" then
+                funcSetStatus(4, "Missing")
+                print("Barco CTRL compositions response was not valid JSON data")
+                return
+            end
+
+            compositions = {}
+            compositionChoiceNames = {}
+            for _, composition in ipairs(response.data) do
+                if composition.name and composition.id then
+                    compositions[composition.name] = {
+                        id = composition.id,
+                        width = tonumber(composition.size and composition.size.width) or 0,
+                        height = tonumber(composition.size and composition.size.height) or 0
+                    }
+                end
+            end
+
+            compositionChoices = {}
+
+            for _, composition in ipairs(response.data) do
+                if composition.name and composition.id then
+                    local width = tonumber(composition.size and composition.size.width) or 0
+                    local height = tonumber(composition.size and composition.size.height) or 0
+                    local choice = composition.name .. " (" .. width .. "x" .. height .. ")"
+                    table.insert(compositionChoices, choice)
+                    compositionChoiceNames[choice] = composition.name
+                end
+            end
+
+            for index = 1, WALL_CONTROL_COUNT do
+                local compositionsControl = funcGetWallControl("Compositions", index)
+                if wallsByIndex[index] then
+                    compositionsControl.Choices = compositionChoices
+                else
+                    compositionsControl.Choices = {}
+                end
+            end
+
+            for name, composition in pairs(compositions) do
+                print(
+                    "Barco CTRL composition: " .. name
+                    .. " = " .. composition.id
+                    .. " (" .. composition.width .. "x" .. composition.height .. ")"
+                )
+            end
+            funcSetStatus(0, "OK")
+        end
+    }
+end
+
+function funcGetWorkplaces()
+    if workplacesLoaded or workplacesRequestInProgress or accessToken == "" then
+        return
+    end
+
+    workplacesRequestInProgress = true
+
+    local url = "https://" .. Controls.IP.String .. "/api/operate/v3/workplaces?type=Wall"
+    local token = accessToken
+    print("Barco CTRL workplaces request: " .. url)
+
+    HttpClient.Get {
+        Url = url,
+        Headers = { ["Authorization"] = "Bearer " .. token },
+        EventHandler = function(_, code, data, err)
+            workplacesRequestInProgress = false
+
+            local responseCode = tonumber(code)
+            if not responseCode
+                or (err ~= nil and err ~= "")
+                or responseCode < 200
+                or responseCode >= 300 then
+                if responseCode == 401 then
+                    funcSetStatus(2, "Unautorized")
+                else
+                    funcSetStatus(4, "Missing")
+                end
+                print(
+                    "Barco CTRL workplaces request failed: "
+                    .. tostring(err or responseCode or "unknown error")
+                    .. " (HTTP " .. tostring(code) .. ")"
+                )
+                return
+            end
+
+            local decoded, response = pcall(rapidjson.decode, data)
+            if not decoded or type(response) ~= "table" or type(response.data) ~= "table" then
+                funcSetStatus(4, "Missing")
+                print("Barco CTRL workplaces response was not valid JSON data")
+                return
+            end
+
+            workplaces = {}
+            wallsByIndex = {}
+            for index = 1, WALL_CONTROL_COUNT do
+                funcGetWallControl("WallName", index).String = ""
+                funcGetWallControl("WallPxSize", index).String = ""
+                funcGetWallControl("WallGridSize", index).String = ""
+                funcGetWallControl("Compositions", index).Choices = {}
+            end
+
+            local wallIndex = 0
+            for _, workplace in ipairs(response.data) do
+                if workplace.name and workplace.id then
+                    local size = workplace.wallGeometry and workplace.wallGeometry.sizePx or {}
+                    local grid = workplace.wallGeometry and workplace.wallGeometry.grid or {}
+                    workplaces[workplace.name] = {
+                        id = workplace.id,
+                        type = workplace.type,
+                        sizePx = {
+                            width = tonumber(size.width) or 0,
+                            height = tonumber(size.height) or 0
+                        },
+                        grid = {
+                            columns = tonumber(grid.columns) or 0,
+                            rows = tonumber(grid.rows) or 0
+                        }
+                    }
+
+                    wallIndex = wallIndex + 1
+                    if wallIndex <= WALL_CONTROL_COUNT then
+                        wallsByIndex[wallIndex] = workplaces[workplace.name]
+                        funcGetWallControl("WallName", wallIndex).String = workplace.name
+                        funcGetWallControl("WallPxSize", wallIndex).String = tostring(size.width or 0)
+                            .. "x" .. tostring(size.height or 0)
+                        funcGetWallControl("WallGridSize", wallIndex).String = tostring(grid.columns or 0)
+                            .. "x" .. tostring(grid.rows or 0)
+                    end
+
+                    print(
+                        "Barco CTRL workplace: " .. workplace.name
+                        .. " = " .. workplace.id
+                        .. " (" .. tostring(size.width or 0)
+                        .. "x" .. tostring(size.height or 0)
+                        .. ", " .. tostring(grid.columns or 0)
+                        .. "x" .. tostring(grid.rows or 0) .. " grid)"
+                    )
+                end
+            end
+
+            for index = 1, WALL_CONTROL_COUNT do
+                if wallsByIndex[index] then
+                    funcGetWallControl("Compositions", index).Choices = compositionChoices
+                end
+            end
+
+            workplacesLoaded = true
+            funcRefreshWallManagers()
+            funcSetStatus(0, "OK")
+        end
+    }
+end
+
+function funcRecallComposition(wallIndex)
+    local selectedChoice = funcGetWallControl("Compositions", wallIndex).String
+    local compositionName = compositionChoiceNames[selectedChoice]
+    local composition = compositionName and compositions[compositionName]
+    local wall = wallsByIndex[wallIndex]
+
+    if not composition then
+        print("Barco CTRL recall ignored: no valid composition selected for wall " .. wallIndex)
+        return
+    end
+
+    if not wall then
+        print("Barco CTRL recall ignored: no wall configured at index " .. wallIndex)
+        return
+    end
+
+    if accessToken == "" or os.time() >= tokenExpiresAt then
+        funcSetStatus(5, "Initializing")
+        print("Barco CTRL recall ignored: token not ready")
+        funcGetToken()
+        return
+    end
+
+    if contentRequestInProgress[wallIndex] then
+        return
+    end
+
+    contentRequestInProgress[wallIndex] = true
+
+    local url = "https://" .. Controls.IP.String .. "/api/operate/v3/workplaces/" .. wall.id .. "/content"
+    local body = rapidjson.encode({
+        {
+            geometry = {
+                type = "px",
+                x = 0,
+                y = 0,
+                width = composition.width,
+                height = composition.height
+            },
+            content = {
+                type = "Composition",
+                id = composition.id
+            },
+            window = {
+                showFrame = false,
+                title = compositionName
+            }
+        }
+    })
+
+    print("Barco CTRL recall request: " .. url)
+
+    HttpClient.Put {
+        Url = url,
+        Data = body,
+        Headers = {
+            ["Authorization"] = "Bearer " .. accessToken,
+            ["Content-Type"] = "application/json"
+        },
+        EventHandler = function(_, code, _, err)
+            contentRequestInProgress[wallIndex] = false
+
+            local responseCode = tonumber(code)
+            if not responseCode
+                or (err ~= nil and err ~= "")
+                or responseCode < 200
+                or responseCode >= 300 then
+                if responseCode == 401 then
+                    funcSetStatus(2, "Unautorized")
+                else
+                    funcSetStatus(4, "Missing")
+                end
+                print(
+                    "Barco CTRL recall failed for wall " .. wallIndex .. ": "
+                    .. tostring(err or responseCode or "unknown error")
+                    .. " (HTTP " .. tostring(code) .. ")"
+                )
+                return
+            end
+
+            print("Barco CTRL composition recalled on wall " .. wallIndex)
+            funcSetStatus(0, "OK")
+        end
+    }
+end
+
+function funcWallManagerDisconnect(wallIndex, statusText)
+    wallManagerTimers[wallIndex]:Stop()
+    wallManagerSessions[wallIndex] = { sid = "", expiresAt = 0 }
+    wallManagerRequestsInProgress[wallIndex] = {}
+    wallManagerControlUpdatesInProgress[wallIndex] = {}
+    funcSetWallManagerValue("WallBrightness", wallIndex, 0)
+    funcSetWallManagerValue("WallPower", wallIndex, 0)
+    funcSetWallManagerStatus(wallIndex, 0, statusText or "Disabled")
+end
+
+function funcRefreshWallManager(wallIndex)
+    if not wallsByIndex[wallIndex] then
+        funcWallManagerDisconnect(wallIndex, "No Wall")
+        return
+    end
+
+    if not funcWallManagerConfigured(wallIndex) then
+        funcWallManagerDisconnect(wallIndex, "Disabled")
+        return
+    end
+
+    funcSetWallManagerStatus(wallIndex, 5, "Initializing")
+    funcWallManagerEnsureSession(wallIndex, function()
+        funcWallManagerPoll(wallIndex)
+    end)
+end
+
+function funcRefreshWallManagers()
+    for index = 1, WALL_CONTROL_COUNT do
+        funcRefreshWallManager(index)
+    end
+end
+
+function funcWallManagerSchedulePoll(wallIndex, delay)
+    if funcWallManagerConfigured(wallIndex) then
+        wallManagerTimers[wallIndex]:Start(math.max(WALL_MANAGER_RETRY_SECONDS, delay or WALL_MANAGER_POLL_SECONDS))
+    end
+end
+
+function funcWallManagerEnsureSession(wallIndex, callback)
+    if not funcWallManagerConfigured(wallIndex) then
+        funcRefreshWallManager(wallIndex)
+        return
+    end
+
+    local session = wallManagerSessions[wallIndex]
+    if session.sid ~= "" and os.time() < (session.expiresAt - WALL_MANAGER_SESSION_MARGIN_SECONDS) then
+        if callback then callback() end
+        return
+    end
+
+    if wallManagerRequestsInProgress[wallIndex].session then
+        return
+    end
+
+    wallManagerRequestsInProgress[wallIndex].session = true
+
+    local requestIP = funcGetWallControl("WallManagerIP", wallIndex).String
+    local requestAuthKey = funcGetWallControl("WallManagerAuthKey", wallIndex).String
+    local url = "https://" .. requestIP .. "/api/v1/auth/key"
+    local body = "{\"type\":\"REST\",\"key\":" .. funcJsonValue(requestAuthKey) .. "}"
+
+    print("Barco Wall Manager " .. wallIndex .. " session request: " .. url)
+
+    HttpClient.Post {
+        Url = url,
+        Data = body,
+        Headers = { ["Content-Type"] = "application/json" },
+        EventHandler = function(response, code, data, err, headers)
+            wallManagerRequestsInProgress[wallIndex].session = false
+
+            if not funcWallManagerConfigured(wallIndex)
+                or funcGetWallControl("WallManagerIP", wallIndex).String ~= requestIP
+                or funcGetWallControl("WallManagerAuthKey", wallIndex).String ~= requestAuthKey then
+                funcRefreshWallManager(wallIndex)
+                return
+            end
+
+            local responseCode = tonumber(code)
+            if not responseCode
+                or (err ~= nil and err ~= "")
+                or responseCode < 200
+                or responseCode >= 300 then
+                wallManagerSessions[wallIndex] = { sid = "", expiresAt = 0 }
+                funcSetWallManagerStatus(wallIndex, responseCode == 401 and 2 or 4, responseCode == 401 and "Unauthorized" or "Missing")
+                print(
+                    "Barco Wall Manager " .. wallIndex .. " session failed: "
+                    .. tostring(err or responseCode or "unknown error")
+                    .. " (HTTP " .. tostring(code) .. ")"
+                )
+                funcWallManagerSchedulePoll(wallIndex, WALL_MANAGER_RETRY_SECONDS)
+                return
+            end
+
+            local sid = funcExtractWallManagerSid(headers or (response and response.Headers), data)
+            local expiresIn = DEFAULT_WALL_MANAGER_SESSION_SECONDS
+            local decoded, response = pcall(rapidjson.decode, data or "")
+            if decoded and type(response) == "table" then
+                expiresIn = tonumber(response.expiresIn) or DEFAULT_WALL_MANAGER_SESSION_SECONDS
+            end
+
+            if sid == "" then
+                wallManagerSessions[wallIndex] = { sid = "", expiresAt = 0 }
+                funcSetWallManagerStatus(wallIndex, 4, "Missing SID")
+                print("Barco Wall Manager " .. wallIndex .. " session response had no sid")
+                funcWallManagerSchedulePoll(wallIndex, WALL_MANAGER_RETRY_SECONDS)
+                return
+            end
+
+            wallManagerSessions[wallIndex] = { sid = sid, expiresAt = os.time() + expiresIn }
+            funcSetWallManagerStatus(wallIndex, 0, "OK")
+            print("Barco Wall Manager " .. wallIndex .. ": session received")
+            if callback then callback() end
+            funcWallManagerSchedulePoll(
+                wallIndex,
+                math.max(WALL_MANAGER_RETRY_SECONDS, math.min(WALL_MANAGER_POLL_SECONDS, expiresIn - WALL_MANAGER_SESSION_MARGIN_SECONDS))
+            )
+        end
+    }
+end
+
+function funcWallManagerAuthenticatedRequest(wallIndex, method, path, body, requestName, callback)
+    funcWallManagerEnsureSession(wallIndex, function()
+        local session = wallManagerSessions[wallIndex]
+        if session.sid == "" then
+            print("Barco Wall Manager " .. wallIndex .. " " .. requestName .. " skipped: session not ready")
+            return
+        end
+
+        local requestIP = funcGetWallControl("WallManagerIP", wallIndex).String
+        local url = "https://" .. requestIP .. path
+        local request = {
+            Url = url,
+            Headers = {
+                ["key"] = session.sid,
+                ["Cookie"] = "sid=" .. session.sid,
+                ["Content-Type"] = "application/json"
+            },
+            EventHandler = function(_, code, data, err)
+                local responseCode = tonumber(code)
+                if not responseCode
+                    or (err ~= nil and err ~= "")
+                    or responseCode < 200
+                    or responseCode >= 300 then
+                    if responseCode == 401 or responseCode == 403 then
+                        wallManagerSessions[wallIndex] = { sid = "", expiresAt = 0 }
+                    end
+                    funcSetWallManagerStatus(wallIndex, (responseCode == 401 or responseCode == 403) and 2 or 4, (responseCode == 401 or responseCode == 403) and "Unauthorized" or "Missing")
+                    print(
+                        "Barco Wall Manager " .. wallIndex .. " " .. requestName .. " failed: "
+                        .. tostring(err or responseCode or "unknown error")
+                        .. " (HTTP " .. tostring(code) .. ")"
+                    )
+                    funcWallManagerSchedulePoll(wallIndex, WALL_MANAGER_RETRY_SECONDS)
+                    return
+                end
+
+                funcSetWallManagerStatus(wallIndex, 0, "OK")
+                if callback then callback(data) end
+            end
+        }
+
+        if body then
+            request.Data = body
+        end
+
+        print("Barco Wall Manager " .. wallIndex .. " " .. requestName .. " request: " .. url)
+        if method == "POST" then
+            HttpClient.Post(request)
+        else
+            HttpClient.Get(request)
+        end
+    end)
+end
+
+function funcWallManagerPoll(wallIndex)
+    if not funcWallManagerConfigured(wallIndex) then
+        funcRefreshWallManager(wallIndex)
+        return
+    end
+
+    funcWallManagerAuthenticatedRequest(wallIndex, "GET", "/api/v1/wall/brightness", nil, "brightness GET", function(data)
+        local decoded, response = pcall(rapidjson.decode, data or "")
+        if decoded and type(response) == "table" then
+            funcSetWallManagerValue("WallBrightness", wallIndex, funcClampBrightness(response.brightness))
+        end
+    end)
+
+    funcWallManagerAuthenticatedRequest(wallIndex, "GET", "/api/v1/wall/power", nil, "power GET", function(data)
+        local decoded, response = pcall(rapidjson.decode, data or "")
+        if decoded and type(response) == "table" then
+            funcSetWallManagerValue("WallPower", wallIndex, funcPowerTextToValue(response.power))
+        end
+    end)
+
+    funcWallManagerSchedulePoll(wallIndex, WALL_MANAGER_POLL_SECONDS)
+end
+
+function funcSetWallManagerBrightness(wallIndex)
+    if wallManagerControlUpdatesInProgress[wallIndex].WallBrightness then
+        return
+    end
+
+    if not funcWallManagerConfigured(wallIndex) then
+        funcRefreshWallManager(wallIndex)
+        return
+    end
+
+    local brightness = funcClampBrightness(funcGetWallControl("WallBrightness", wallIndex).Value)
+    local body = "{\"brightness\":" .. brightness .. "}"
+    funcSetWallManagerValue("WallBrightness", wallIndex, brightness)
+    funcWallManagerAuthenticatedRequest(wallIndex, "POST", "/api/v1/wall/brightness", body, "brightness POST")
+end
+
+function funcSetWallManagerPower(wallIndex)
+    if wallManagerControlUpdatesInProgress[wallIndex].WallPower then
+        return
+    end
+
+    if not funcWallManagerConfigured(wallIndex) then
+        funcRefreshWallManager(wallIndex)
+        return
+    end
+
+    local power = funcClampPower(funcGetWallControl("WallPower", wallIndex).Value)
+    local body = "{\"power\":" .. funcJsonValue(funcPowerToText(power)) .. "}"
+    funcSetWallManagerValue("WallPower", wallIndex, power)
+    funcWallManagerAuthenticatedRequest(wallIndex, "POST", "/api/v1/wall/power", body, "power POST")
+end
+
+
+local function funcRegisterWallControlHandlers()
+    for index = 1, WALL_CONTROL_COUNT do
+        local wallIndex = index
+        local compositionsControl = funcGetWallControl("Compositions", wallIndex)
+        local ipControl = funcGetWallControl("WallManagerIP", wallIndex)
+        local authKeyControl = funcGetWallControl("WallManagerAuthKey", wallIndex)
+        local brightnessControl = funcGetWallControl("WallBrightness", wallIndex)
+        local powerControl = funcGetWallControl("WallPower", wallIndex)
+
+        wallManagerTimers[wallIndex].EventHandler = function()
+            funcWallManagerPoll(wallIndex)
+        end
+
+        compositionsControl.EventHandler = function()
+            funcRecallComposition(wallIndex)
+        end
+
+        if ipControl then
+            ipControl.EventHandler = function()
+                funcRefreshWallManager(wallIndex)
+            end
+        end
+
+        if authKeyControl then
+            authKeyControl.EventHandler = function()
+                funcRefreshWallManager(wallIndex)
+            end
+        end
+
+        if brightnessControl then
+            brightnessControl.EventHandler = function()
+                funcSetWallManagerBrightness(wallIndex)
+            end
+        end
+
+        if powerControl then
+            powerControl.EventHandler = function()
+                funcSetWallManagerPower(wallIndex)
+            end
+        end
+    end
+end
+
+function funcCheckValueCompleteness()
+    -- A settings change makes the current token invalid for future API calls.
+    accessToken = ""
+    tokenExpiresAt = 0
+    compositionPollTimer:Stop()
+    workplacesLoaded = false
+    workplaces = {}
+    wallsByIndex = {}
+    contentRequestInProgress = {}
+    funcRefreshWallManagers()
+    if Controls.IP.String == "" or Controls.ClientID.String == "" or Controls.ClientSecret.String == "" then
+        funcSetStatus(1, "incomplete")
+    else
+        funcSetStatus(5, "Initializing")
+    end
+    funcGetToken()
+end
+
+
+------------------------------- Runtime Logic ---------------------------------
+
+if Controls then
+------------------------------------ Objects ----------------------------------
+
+
+-------------------------------- Initialization -------------------------------
+function Initialize()
+	-- Do initialization stuff here
+    rapidjson = require("rapidjson")
+
+    ip = Controls.IP.String
+    clientID = Controls.ClientID.String
+    clientSecret = Controls.ClientSecret.String
+
+    -- Kept globally so subsequent API calls can use:
+    -- "Authorization", "Bearer " .. accessToken
+    accessToken = ""
+    tokenExpiresAt = 0
+    tokenRequestInProgress = false
+    compositionRequestInProgress = false
+    compositions = {}
+    compositionChoiceNames = {}
+    compositionChoices = {}
+    workplacesRequestInProgress = false
+    workplacesLoaded = false
+    workplaces = {}
+    wallsByIndex = {}
+    contentRequestInProgress = {}
+
+    TOKEN_REFRESH_MARGIN_SECONDS = 60
+    TOKEN_RETRY_SECONDS = 5
+    DEFAULT_TOKEN_LIFETIME_SECONDS = 600
+    COMPOSITION_POLL_SECONDS = 60
+    WALL_CONTROL_COUNT = math.ceil(tonumber(Properties["#Walls"].Value) or 1)
+    WALL_MANAGER_POLL_SECONDS = 60
+    WALL_MANAGER_RETRY_SECONDS = 5
+    WALL_MANAGER_SESSION_MARGIN_SECONDS = 60
+    DEFAULT_WALL_MANAGER_SESSION_SECONDS = 1800
+
+    tokenRefreshTimer = Timer.New()
+    compositionPollTimer = Timer.New()
+    wallManagerTimers = {}
+    wallManagerSessions = {}
+    wallManagerRequestsInProgress = {}
+    wallManagerControlUpdatesInProgress = {}
+
+    for index = 1, WALL_CONTROL_COUNT do
+        wallManagerTimers[index] = Timer.New()
+        wallManagerSessions[index] = { sid = "", expiresAt = 0 }
+        wallManagerRequestsInProgress[index] = {}
+        wallManagerControlUpdatesInProgress[index] = {}
+    end
+
+    funcRegisterWallControlHandlers()
+    tokenRefreshTimer.EventHandler = funcGetToken
+    compositionPollTimer.EventHandler = funcPollCompositions
+
+    funcCheckValueCompleteness()
+    Controls.IP.EventHandler = funcCheckValueCompleteness
+    Controls.ClientID.EventHandler = funcCheckValueCompleteness
+    Controls.ClientSecret.EventHandler = funcCheckValueCompleteness
+end
+
+local canInitialize = true
+
+-- Check Properties and other stuff for illegal values
+
+if canInitialize then
+	print("Initializing")
+	Initialize()
+	print("Initialization Complete")
+else
+	print("Not initializing")
+end
+
+-- Nothing should be done after this point
+
+end	--if Controls 
