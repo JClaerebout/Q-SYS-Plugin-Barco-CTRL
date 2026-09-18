@@ -85,7 +85,7 @@ It then uses the CTRL Operate API to:
 - retrieve walls from `/api/operate/v3/workplaces?type=Wall`
 - recall content with `PUT /api/operate/v3/workplaces/{id}/content`
 
-The access token is refreshed before it expires. Compositions are refreshed every 60 seconds.
+The access token is refreshed before it expires. Compositions are normally refreshed every 60 seconds. Failed wall discovery temporarily shortens polling to five seconds until discovery succeeds; successful token or composition requests do not clear the discovery error.
 
 ### Barco Wall Manager API
 
@@ -99,6 +99,8 @@ The resulting session is used to read and set:
 - `/api/v1/wall/power`
 
 Brightness and power feedback are polled every 60 seconds.
+
+Commands received during session authentication are retained, with repeated changes to the same control coalesced to the latest value. Pending commands survive authentication retries, but are discarded when connection settings change or the wall is disconnected.
 
 ## Installation
 
@@ -114,8 +116,9 @@ Brightness and power feedback are polled every 60 seconds.
 
 - The Q-SYS Core must be able to reach the Barco CTRL server and each Wall Manager over HTTPS.
 - Valid CTRL API client credentials and Wall Manager authentication keys are required.
-- Changing CTRL credentials clears the current token and reloads wall data.
-- Selecting a composition immediately recalls it full-size at position `0,0` on the assigned wall.
+- Changing CTRL connection settings clears the current token, discovered data, and queued recalls. Replies from the previous connection are ignored.
+- Changing a Wall Manager address or authentication key invalidates its session and starts fresh authentication. Replies from an old connection or session cannot update feedback or status.
+- Selecting a composition recalls it full-size at position `0,0` on the assigned wall. Recalls are serialized per wall; if another recall is pending, the latest selection is sent when it completes. A selection waiting for a valid CTRL token resumes after authentication succeeds.
 
 ## Known Limitations
 
@@ -123,6 +126,16 @@ Brightness and power feedback are polled every 60 seconds.
 - Wall assignment follows the order returned by the CTRL API and is not manually selectable.
 - Composition recall replaces the wall content with one full-size composition.
 - The plugin does not provide certificate configuration or custom port settings.
+
+## Regression checks
+
+Run the asynchronous state regression scenarios from the repository root with Lua 5.3 or later:
+
+```sh
+lua tests/async_state.lua
+```
+
+The harness executes the plugin with deterministic controls, timers, HTTP callbacks, and decoded JSON fixtures. It covers connection changes, stale responses, discovery recovery, and pending commands. It does not validate Q-SYS Designer/Core integration, HTTP/TLS behavior, or Barco API wire formats; those still require integration testing.
 
 ## License
 
