@@ -2,7 +2,7 @@ PluginInfo = {
 	-- Use a tilde (~) to seperate the name into a folder
     Name = "Barco~Barco CTRL",
 	-- Use semantic versioning
-    Version = "1.0.0.0",
+    Version = "1.0.1.0",
 	-- Use a GUID for the Id (Note: Avoid changing the Id for a plugin once it is set)
     Id = "9ddae16e-e281-4070-8065-82ce1ec61a6a",
 	-- The square brackets allow for a multi-line string

@@ -21,7 +21,7 @@ The **Barco CTRL Q-SYS Plugin** integrates Barco CTRL video walls with Q-SYS. It
 | Property | Value |
 | -------- | ----- |
 | Name | Barco CTRL |
-| Version | 1.0.0.0 |
+| Version | 1.0.1.0 |
 | Author | Jens Claerebout |
 | Protocol | HTTPS REST API |
 | Authentication | OAuth 2.0 client credentials / Wall Manager authentication key |
@@ -144,3 +144,7 @@ MIT License
 ## Author
 
 Jens Claerebout
+
+## Contributors
+
+- [timwalex-oss](https://github.com/timwalex-oss) — fixed asynchronous connection state handling and retention of pending wall commands ([#1](https://github.com/JClaerebout/Q-SYS-Plugin-Barco-CTRL/issues/1)).
