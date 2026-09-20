@@ -2,11 +2,11 @@ PluginInfo = {
 	-- Use a tilde (~) to seperate the name into a folder
     Name = "Barco~Barco CTRL",
 	-- Use semantic versioning
-    Version = "1.0.1.0",
+    Version = "1.1.0.0",
 	-- Use a GUID for the Id (Note: Avoid changing the Id for a plugin once it is set)
     Id = "9ddae16e-e281-4070-8065-82ce1ec61a6a",
 	-- The square brackets allow for a multi-line string
-    Description = [[Control Barco CTRL Walls and Compositions]],
+    Description = [[Control Barco CTRL Walls, Desks and Compositions]],
     Author = "Jens Claerebout",
     ShowDebug = true
 }
@@ -51,10 +51,11 @@ function GetProperties()
         Name = "#Walls",
         Type = "integer",
         Value = 1,
-        Min = 1,
+        Min = 0,
         Max = 5,
     })
 
+    table.insert(props, { Name = "#Desks", Type = "integer", Value = 0, Min = 0, Max = 5 })
     return props
 end
 
@@ -205,276 +206,92 @@ function GetControls(props)
         Icon = "Power",
     })
 
+    table.insert(ctls, { Name = "WallSelect", ControlType = "Text", Count = props["#Walls"].Value, UserPin = false })
+    local deskCount = props["#Desks"] and props["#Desks"].Value or 0
+    for _, name in ipairs({ "DeskSelect", "DeskName", "DeskVpxSize", "DeskDisplays" }) do
+        if deskCount > 0 then
+            table.insert(ctls, { Name = name, ControlType = "Text", Count = deskCount, UserPin = false })
+        end
+    end
+    for _, entry in ipairs({ {"WallDiagram", props["#Walls"].Value}, {"DeskDiagram", deskCount} }) do
+        table.insert(ctls, { Name = entry[1], ControlType = "Button", ButtonType = "Toggle", Count = entry[2], UserPin = false })
+    end
+    -- Omit zero-count definitions (Q-SYS expects a positive Count).
+    for i = #ctls, 1, -1 do
+        if ctls[i].Count == 0 then table.remove(ctls, i) end
+    end
+
     return ctls
 end
 
 ------------------------------- Control Layout --------------------------------
 function GetControlLayout(props)
-	-- Uncomment the next line if you are using multiple pages
-	local currentPage = props["page_index"].Value
+    local page = props["page_index"].Value
     local wallCount = math.ceil(props["#Walls"].Value)
-
-    -- Q-SYS omits the numeric suffix when a control's Count is exactly 1.
-    local function WallControlName(name, index)
-        if wallCount == 1 then
-            return name
-        end
-        return name .. " " .. index
+    local deskCount = props["#Desks"] and props["#Desks"].Value or 0
+    local layout, graphics = {}, {}
+    local function label(text, x, y, width)
+        table.insert(graphics, { Type = "Label", Text = text, Position = {x,y}, Size = {width,18},
+            TextSize = 11, HTextAlign = "Left", Color = {36,55,70} })
     end
-
-    local layout = { }
-
-	if ENABLE_CODE_PIN then
-		layout["code"] = 
-		{
-			PrettyName = "Code",
-			Style = "None"
-		}
-	end
-
-    local graphics = { }
-
+    local function section(title, y, height)
+        table.insert(graphics, { Type = "GroupBox", Position = {12,y}, Size = {456,height},
+            StrokeColor = {191,204,213}, StrokeWidth = 1, CornerRadius = 6 })
+        label(title, 24, y + 8, 420)
+    end
+    local function control(name, title, style, x, y, width, height, readOnly)
+        layout[name] = { PrettyName = title, Style = style, Position = {x,y}, Size = {width,height},
+            TextFontSize = 11, IsReadOnly = readOnly or false }
+    end
+    local function name(base, index, count)
+        return count == 1 and base or base .. " " .. index
+    end
+    if ENABLE_CODE_PIN then layout.code = { PrettyName = "Code", Style = "None" } end
     LogoBase64 = "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"
-
-    if currentPage == 1 then
-        table.insert(graphics, {
-            Type = "GroupBox",
-            Position = { 14,14 },
-            Size = {500,475},
-            StrokeColor = "black",
-            StrokeWidth = 2,
-            CornerRadius = 10,
-        })
-
-        table.insert(graphics, {
-            Type = "Image", -- PNG,JPEG
-            Image = LogoBase64,
-            Position = {127,37},
-            Size = {271,63}
-        })
-
-        table.insert(graphics, {
-            Type = "Label",
-			Position = { 127,100 },
-			Size = {271,34},
-            Text = "CTRL",
-            TextSize = 20,
-            HTextAlign = "Center"
-        })
-        table.insert(graphics, {
-            Type = "Label",
-			Position = { 29,160 },
-			Size = {467,34},
-            Text = "IP",
-            TextSize = 20,
-            HTextAlign = "Center"
-        })
-        table.insert(graphics, {
-            Type = "Label",
-			Position = { 29,233 },
-			Size = {467,34},
-            Text = "Client ID",
-            TextSize = 20,
-            HTextAlign = "Center"
-        })
-        table.insert(graphics, {
-            Type = "Label",
-			Position = { 29,306 },
-			Size = {467,34},
-            Text = "Client Secret",
-            TextSize = 20,
-            HTextAlign = "Center"
-        })
-        table.insert(graphics, {
-            Type = "Label",
-			Position = { 29,382 },
-			Size = {467,34},
-            Text = "Status",
-            TextSize = 20,
-            HTextAlign = "Center"
-        })
-
-        layout["Status"] = 
-        {
-            PrettyName = "Status",
-            Position = { 29,416 },
-            Size = { 467,51 },
-            Style = "text",
-            TextFontSize = 15,
-        }
-        layout["IP"] = 
-        {
-            PrettyName = "IP",
-            Position = { 29,194 },
-            Size = { 467,34 },
-            Style = "Text",
-            TextFontSize = 15,
-        }
-        layout["ClientID"] = 
-        {
-            PrettyName = "Client ID",
-            Position = { 29,267 },
-            Size = { 467,34 },
-            Style = "Text",
-            TextFontSize = 15,
-        }
-        layout["ClientSecret"] = 
-        {
-            PrettyName = "Client Secret",
-            Position = { 29,340 },
-            Size = { 467,34 },
-            Style = "Text",
-            TextFontSize = 15,
-        }
-
+    if page == 1 then
+        table.insert(graphics, { Type = "Image", Image = LogoBase64, Position = {24,16}, Size = {120,28} })
+        label("CTRL | Connection setup", 164, 22, 280)
+        section("CTRL server", 60, 196)
+        label("Server address", 24, 92, 110)
+        control("IP", "CTRL Server Address", "Text", 142, 90, 314, 24)
+        label("Client ID", 24, 128, 110)
+        control("ClientID", "Client ID", "Text", 142, 126, 314, 24)
+        label("Client secret", 24, 164, 110)
+        control("ClientSecret", "Client Secret", "Text", 142, 162, 314, 24)
+        label("Connection status", 24, 204, 110)
+        control("Status", "CTRL Status", "Text", 142, 202, 314, 32, true)
     else
-        table.insert(graphics, {
-            Type = "GroupBox",
-            Position = { 14,14 },
-            Size = {500,987},
-            StrokeColor = "black",
-            StrokeWidth = 2,
-            CornerRadius = 10,
-        })
-
-        table.insert(graphics, {
-            Type = "Label",
-			Position = { 32,139 },
-			Size = {465,26},
-            Text = "Composition:",
-            TextSize = 20,
-            HTextAlign = "Center"
-        })
-        table.insert(graphics, {
-            Type = "Label",
-			Position = { 32,422 },
-			Size = {465,39},
-            Text = "Wall Manager IP",
-            TextSize = 20,
-            HTextAlign = "Center"
-        })
-        table.insert(graphics, {
-            Type = "Label",
-			Position = { 32,497 },
-			Size = {465,39},
-            Text = "Wall Manager Auth Key",
-            TextSize = 20,
-            HTextAlign = "Center"
-        })
-        table.insert(graphics, {
-            Type = "Label",
-			Position = { 32,581 },
-			Size = {465,39},
-            Text = "Wall Manager Status",
-            TextSize = 20,
-            HTextAlign = "Center"
-        })
-        table.insert(graphics, {
-            Type = "Label",
-			Position = { 32,679 },
-			Size = {465,39},
-            Text = "Wall Brightness",
-            TextSize = 20,
-            HTextAlign = "Center"
-        })
-        table.insert(graphics, {
-            Type = "Label",
-			Position = { 32,785 },
-			Size = {465,39},
-            Text = "Wall Power",
-            TextSize = 20,
-            HTextAlign = "Center"
-        })
-
-        local groupIndex = (currentPage - 1)
-
-        layout[WallControlName("WallName", groupIndex)] = 
-        {
-            PrettyName = "Wall Name~Wall Name " .. (groupIndex),
-            Position = { 32,22 },
-            Size = { 465,36 },
-            Style = "Text",
-            TextFontSize = 20,
-            Color = {0, 0, 0, 0},
-            TextColor = {0, 0, 0},
-            StrokeWidth = 0,
-            StrokeColor = {0, 0, 0, 0},
-        }
-        layout[WallControlName("WallPxSize", groupIndex)] = 
-        {
-            PrettyName = "Wall Pixel Size~Wall Pixel Size " .. (groupIndex),
-            Position = { 32,58 },
-            Size = { 465,36 },
-            Style = "Text",
-            TextFontSize = 20,
-            Color = {0, 0, 0, 0},
-            TextColor = {0, 0, 0},
-            StrokeWidth = 0,
-            StrokeColor = {0, 0, 0, 0},
-        }
-        layout[WallControlName("WallGridSize", groupIndex)] = 
-        {
-            PrettyName = "Wall Grid Size~Wall Grid Size " .. (groupIndex),
-            Position = { 32,93 },
-            Size = { 465,36 },
-            Style = "Text",
-            TextFontSize = 20,
-            Color = {0, 0, 0, 0},
-            TextColor = {0, 0, 0},
-            StrokeWidth = 0,
-            StrokeColor = {0, 0, 0, 0},
-        }
-        layout[WallControlName("Compositions", groupIndex)] = 
-        {
-            PrettyName = "Compositions~Compositions " .. (groupIndex),
-            Position = { 32,167 },
-            Size = { 465,235 },
-            Style = "ListBox",
-            TextFontSize = 20,
-        }
-        layout[WallControlName("WallManagerIP", groupIndex)] = 
-        {
-            PrettyName = "Wall Manager IP~Wall Manager IP " .. (groupIndex),
-            Position = { 32,461 },
-            Size = { 465,36 },
-            Style = "Text",
-            TextFontSize = 15,
-        }
-        layout[WallControlName("WallManagerAuthKey", groupIndex)] = 
-        {
-            PrettyName = "Wall Manager Authentication Key~Wall Manager Authentication Key " .. (groupIndex),
-            Position = { 32,536 },
-            Size = { 465,36 },
-            Style = "Text",
-            TextFontSize = 15,
-        }
-        layout[WallControlName("WallManagerStatus", groupIndex)] = 
-        {
-            PrettyName = "Wall Manager Status~Wall Manager Status " .. (groupIndex),
-            Position = { 32,620 },
-            Size = { 465,36 },
-            Style = "Text",
-            TextFontSize = 15,
-        }
-        layout[WallControlName("WallBrightness", groupIndex)] = 
-        {
-            PrettyName = "Wall Brightness~Wall Brightness " .. (groupIndex),
-            Position = { 32,718 },
-            Size = { 465,51 },
-            Style = "Fader",
-        }
-        layout[WallControlName("WallPower", groupIndex)] = 
-        {
-            PrettyName = "Wall Power~Wall Power " .. (groupIndex),
-            Position = { 215,852 },
-            Size = { 100,100 },
-            Style = "Button",
-            CornerRadius = 50,
-        }
-
-
+        local isWall = page <= wallCount + 1
+        local index = isWall and page - 1 or page - wallCount - 1
+        local count = isWall and wallCount or deskCount
+        local prefix = isWall and "Wall" or "Desk"
+        local function field(base, title, style, x, y, width, height, readOnly)
+            control(name(base, index, count), title .. " " .. index, style, x, y, width, height, readOnly)
+        end
+        section(prefix .. " " .. index .. " | Workplace", 12, 96)
+        label("Selected " .. prefix:lower(), 24, 44, 100)
+        field(prefix .. "Select", "Select " .. prefix, "ComboBox", 130, 42, 326, 24)
+        label(isWall and "Size (pixels)" or "Size (virtual pixels)", 24, 78, 130)
+        field(isWall and "WallPxSize" or "DeskVpxSize", prefix .. " Size", "Text", 164, 76, 292, 22, true)
+        section("Live preview", 120, isWall and 218 or 278)
+        field(prefix .. "Diagram", prefix .. " Preview", "Button", 24, 150, 432, isWall and 156 or 216)
+        label("Green: source    Purple: composition", 24, isWall and 312 or 372, 432)
+        if isWall then
+            section("Recall composition", 350, 142)
+            field("Compositions", "Compositions", "ListBox", 24, 378, 432, 102)
+            section("Wall Manager", 504, 194)
+            label("Server address", 24, 536, 110)
+            field("WallManagerIP", "Wall Manager Address", "Text", 142, 534, 314, 24)
+            label("Auth key", 24, 568, 110)
+            field("WallManagerAuthKey", "Wall Manager Auth Key", "Text", 142, 566, 314, 24)
+            label("Status", 24, 602, 110)
+            field("WallManagerStatus", "Wall Manager Status", "Text", 142, 600, 314, 26, true)
+            label("Brightness", 24, 640, 90)
+            field("WallBrightness", "Wall Brightness", "Fader", 114, 636, 236, 28)
+            label("Power", 364, 640, 48)
+            field("WallPower", "Wall Power", "Button", 416, 634, 40, 32)
+        end
     end
-
     return layout, graphics
 end
 
@@ -495,6 +312,9 @@ function GetPages(props)
         table.insert(pages, { name = "Wall " .. i })
     end
 
+    for i = 1, (props["#Desks"] and props["#Desks"].Value or 0) do
+        table.insert(pages, { name = "Desk " .. i })
+    end
     return pages
 end
 
@@ -531,7 +351,7 @@ local function funcSetStatus(value, text)
     -- Successful token/composition calls must not hide incomplete wall discovery.
     if value == 0 and not workplacesLoaded then
         value = workplacesError and workplacesError.value or 5
-        text = workplacesError and workplacesError.text or "Discovering walls"
+        text = workplacesError and workplacesError.text or "Discovering workplaces"
     end
     Controls.Status.Value = value
     Controls.Status.String = text
@@ -548,12 +368,18 @@ local function funcJsonValue(value)
 end
 
 local function funcGetWallControl(controlName, index)
-    local control = Controls[controlName]
+    local count = WALL_CONTROL_COUNT
+    if index > WALL_CONTROL_COUNT then
+        index = index - WALL_CONTROL_COUNT
+        count = DESK_CONTROL_COUNT
+        controlName = ({ DeskDiagram = "DeskDiagram", DeskVpxSize = "DeskVpxSize", DeskDisplays = "DeskDisplays", WallName = "DeskName", WallSelect = "DeskSelect" })[controlName]
+    end
+    local control = controlName and Controls[controlName]
     if not control then
         return nil
     end
 
-    if WALL_CONTROL_COUNT == 1 then
+    if count == 1 then
         return index == 1 and control or nil
     end
 
@@ -745,7 +571,9 @@ function funcGetToken()
         funcSetStatus(0, "OK")
         print("Barco CTRL: token received")
         funcGetCompositions()
+        funcGetSources()
         funcGetWorkplaces()
+        funcPollWorkplaceContents()
         compositionPollTimer:Start(COMPOSITION_POLL_SECONDS)
         for index = 1, WALL_CONTROL_COUNT do
             if pendingCompositionChoices[index] then
@@ -763,10 +591,105 @@ end
 function funcPollCompositions()
     if accessToken ~= "" and os.time() < tokenExpiresAt then
         funcGetCompositions()
+        funcGetSources()
         funcGetWorkplaces()
+        funcPollWorkplaceContents()
     else
         funcGetToken()
     end
+end
+
+-- Keep the full source records as an array: a source ID may occur in
+-- multiple classes, and names are not unique. No source controls yet.
+function funcGetWorkplaceContent(index)
+    local workplace = selectedWorkplaces[index]
+    if not workplace or accessToken == "" or os.time() >= tokenExpiresAt or contentRequestInProgress[index] then return end
+    local state = workplaceContentStates[index]
+    if not state then state = {}; workplaceContentStates[index] = state end
+    if state.inProgress then return end
+    state.inProgress = true
+    local generation = ctrlGeneration
+    local selectionGeneration = selectionGenerations[index]
+    HttpClient.Get {
+        Url = "https://" .. Controls.IP.String .. "/api/operate/v3/workplaces/" .. funcUrlEncode(workplace.id) .. "/content",
+        Headers = { ["Authorization"] = "Bearer " .. accessToken },
+        EventHandler = function(_, code, data, err)
+            if generation ~= ctrlGeneration or selectionGeneration ~= selectionGenerations[index]
+                or workplaceContentStates[index] ~= state then return end
+            state.inProgress = false
+            local responseCode = tonumber(code)
+            local decoded, response = pcall(rapidjson.decode, data)
+            if not responseCode or responseCode < 200 or responseCode >= 300 or (err and err ~= "") then
+                state.error = "Content request failed (HTTP " .. tostring(code) .. ")"
+            elseif not decoded or type(response) ~= "table" or type(response.data) ~= "table" or response.error then
+                state.error = "Invalid content response"
+            else
+                local valid, count = true, 0
+                for key, item in pairs(response.data) do
+                    count = count + 1
+                    if type(key) ~= "number" or key < 1 or key % 1 ~= 0 or type(item) ~= "table"
+                        or type(item.geometry) ~= "table" or type(item.content) ~= "table" then valid = false end
+                end
+                for item = 1, count do if response.data[item] == nil then valid = false end end
+                if valid then state.data = response.data; state.error = nil
+                else state.error = "Invalid content records" end
+            end
+            if state.error then print("Barco CTRL " .. workplace.id .. ": " .. state.error) end
+            funcUpdateWorkplaceChoices()
+        end
+    }
+end
+
+function funcPollWorkplaceContents()
+    for index = 1, WORKPLACE_CONTROL_COUNT do funcGetWorkplaceContent(index) end
+end
+
+function funcGetSources()
+    if accessToken == "" or sourcesRequestInProgress then return end
+    sourcesRequestInProgress = true
+    local generation = ctrlGeneration
+    HttpClient.Get {
+        Url = "https://" .. Controls.IP.String .. "/api/operate/v3/sources",
+        Headers = { ["Authorization"] = "Bearer " .. accessToken },
+        EventHandler = function(_, code, data, err)
+            if generation ~= ctrlGeneration then return end
+            sourcesRequestInProgress = false
+            local responseCode = tonumber(code)
+            if not responseCode or responseCode < 200 or responseCode >= 300 or (err ~= nil and err ~= "") then
+                sourcesError = "Sources request failed (HTTP " .. tostring(code) .. "): " .. tostring(err or "")
+                print("Barco CTRL " .. sourcesError)
+                return
+            end
+            local decoded, response = pcall(rapidjson.decode, data)
+            if not decoded or type(response) ~= "table" or type(response.data) ~= "table" or response.error then
+                sourcesError = "Invalid sources response"
+                print("Barco CTRL " .. sourcesError)
+                return
+            end
+            -- Validate before replacing the last successful snapshot.
+            local count = 0
+            for key, source in pairs(response.data) do
+                if type(key) ~= "number" or key < 1 or key % 1 ~= 0
+                    or type(source) ~= "table" or type(source.id) ~= "string" or type(source.name) ~= "string" then
+                    sourcesError = "Invalid source record"
+                    print("Barco CTRL " .. sourcesError)
+                    return
+                end
+                count = count + 1
+            end
+            for index = 1, count do
+                if response.data[index] == nil then
+                    sourcesError = "Invalid sources array"
+                    print("Barco CTRL " .. sourcesError)
+                    return
+                end
+            end
+            sources = response.data
+            sourcesLoaded = true
+            sourcesError = nil
+            print("Barco CTRL sources loaded: " .. count)
+        end
+    }
 end
 
 function funcGetCompositions()
@@ -842,14 +765,7 @@ function funcGetCompositions()
                 end
             end
 
-            for index = 1, WALL_CONTROL_COUNT do
-                local compositionsControl = funcGetWallControl("Compositions", index)
-                if wallsByIndex[index] then
-                    compositionsControl.Choices = compositionChoices
-                else
-                    compositionsControl.Choices = {}
-                end
-            end
+            funcUpdateWorkplaceChoices()
 
             for name, composition in pairs(compositions) do
                 print(
@@ -863,6 +779,207 @@ function funcGetCompositions()
     }
 end
 
+-- Choices carry IDs so duplicate names remain distinct and assignments survive API reordering.
+local function workplaceChoice(workplace)
+    return workplace.name .. " [" .. workplace.id .. "]"
+end
+
+-- Q-SYS renders an EzSVG document through a button's encoded legend.
+-- https://help.qsys.com/q-sys_9.7/Content/Control_Scripting/Using_Lua_in_Q-Sys/EzSVG.htm
+local function svgText(doc, text, x, y, fontSize)
+    local escaped = tostring(text):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")
+    doc:add(EzSVG.Text(escaped, x, y, { fill = "#243746", stroke = "none", font_size = math.min(11, fontSize or 11), font_family = "Arial", text_anchor = "middle" }))
+end
+
+local function diagramNumber(value)
+    local number = tonumber(value)
+    if not number or number ~= number or math.abs(number) == math.huge then return 0 end
+    return number
+end
+
+local function drawWorkplaceDiagram(control, workplace, isWall, contentState)
+    local width, height = 432, isWall and 156 or 216
+    local doc = EzSVG.Document(width, height)
+    local cells = {}
+    local minX, minY, maxX, maxY = 0, 0, 0, 0
+    local message = "No workplace selected"
+    if workplace and isWall then
+        local geometry = workplace.wallGeometry or {}
+        local grid, size = geometry.grid or {}, geometry.sizePx or {}
+        local columns, rows = math.floor(diagramNumber(grid.columns)), math.floor(diagramNumber(grid.rows))
+        message = "Grid unavailable"
+        -- Avoid excessive drawing work for corrupt discovery data.
+        if columns > 0 and rows > 0 and columns * rows <= 1024 then
+            maxX, maxY = diagramNumber(size.width), diagramNumber(size.height)
+            if maxX <= 0 or maxY <= 0 then maxX, maxY = columns * 16, rows * 9 end
+            for row = 0, rows - 1 do
+                for column = 0, columns - 1 do
+                    table.insert(cells, { x = column * maxX / columns, y = row * maxY / rows,
+                        width = maxX / columns, height = maxY / rows, label = (row + 1) .. "," .. (column + 1) })
+                end
+            end
+        end
+    elseif workplace then
+        message = "Display geometry unavailable"
+        local size = workplace.deskGeometry and workplace.deskGeometry.sizeVpx or {}
+        maxX, maxY = math.max(0, diagramNumber(size.width)), math.max(0, diagramNumber(size.height))
+        for _, display in ipairs(workplace.displays or {}) do
+            local geometry = display.geometry or {}
+            local w, h = diagramNumber(geometry.width), diagramNumber(geometry.height)
+            -- deskGeometry uses virtual pixels; do not mix incompatible units.
+            if geometry.type == "vpx" and w > 0 and h > 0 then
+                local x, y = diagramNumber(geometry.x), diagramNumber(geometry.y)
+                minX, minY = math.min(minX, x), math.min(minY, y)
+                maxX, maxY = math.max(maxX, x + w), math.max(maxY, y + h)
+                table.insert(cells, { x = x, y = y, width = w, height = h,
+                    label = display.connection or "Display", device = display.device or "",
+                    dimensions = w .. "x" .. h .. " vpx" })
+            end
+        end
+    end
+    if #cells == 0 then
+        svgText(doc, message, width / 2, height / 2, 16)
+    else
+        local scale = math.min((width - 24) / (maxX - minX), (height - 24) / (maxY - minY))
+        local offsetX = (width - (maxX - minX) * scale) / 2
+        local offsetY = (height - (maxY - minY) * scale) / 2
+        for _, cell in ipairs(cells) do
+            local x, y = offsetX + (cell.x - minX) * scale, offsetY + (cell.y - minY) * scale
+            local w, h = cell.width * scale, cell.height * scale
+            doc:add(EzSVG.Rect(x, y, w, h, 0, 0, { fill = "#deedf5", stroke = "#426b85", stroke_width = 1.5 }))
+            local lines = cell.device and {cell.label, cell.device, cell.dimensions} or {cell.label}
+            local longest = 1
+            for _, line in ipairs(lines) do longest = math.max(longest, #line) end
+            local font = math.min(11, (w - 8) / (longest * 0.65), (h - 8) / (#lines * 1.5))
+            if font >= 5 then
+                for line, text in ipairs(lines) do
+                    svgText(doc, text, x + w / 2, y + h / 2 + (line - (#lines + 1) / 2) * font * 1.5 + font * 0.35, font)
+                end
+            end
+        end
+        local skipped = 0
+        for _, item in ipairs(contentState and contentState.data or {}) do
+            local geometry = item.geometry
+            local unit = isWall and "px" or "vpx"
+            local factorX, factorY = 1, 1
+            local compatible = geometry.type == unit
+            -- Convert only when the API supplies both coordinate-space extents.
+            if not compatible then
+                local workplaceGeometry = isWall and workplace.wallGeometry or workplace.deskGeometry
+                local from = workplaceGeometry and workplaceGeometry[geometry.type == "px" and "sizePx" or "sizeVpx"]
+                local to = workplaceGeometry and workplaceGeometry[unit == "px" and "sizePx" or "sizeVpx"]
+                if (geometry.type == "px" or geometry.type == "vpx") and from and to
+                    and diagramNumber(from.width) > 0 and diagramNumber(from.height) > 0 then
+                    factorX, factorY = diagramNumber(to.width) / from.width, diagramNumber(to.height) / from.height
+                    compatible = factorX > 0 and factorY > 0
+                end
+            end
+            local x, y = diagramNumber(geometry.x) * factorX, diagramNumber(geometry.y) * factorY
+            local w, h = diagramNumber(geometry.width) * factorX, diagramNumber(geometry.height) * factorY
+            if compatible and w > 0 and h > 0 then
+                -- Clip to the workplace canvas without changing the grid scale.
+                local right, bottom = math.min(maxX, x + w), math.min(maxY, y + h)
+                x, y = math.max(minX, x), math.max(minY, y)
+                w, h = (right - x) * scale, (bottom - y) * scale
+                x, y = offsetX + (x - minX) * scale, offsetY + (y - minY) * scale
+                if w > 0 and h > 0 then
+                    local composition = item.content.type == "Composition"
+                    doc:add(EzSVG.Rect(x, y, w, h, 0, 0, { fill = composition and "#e8c8fa" or "#bce9d8", fill_opacity = 0.8, stroke = composition and "#8445a4" or "#237f64", stroke_width = 2 }))
+                    local title = item.window and item.window.title
+                    if not title or title == "" then title = item.content.id or "Content" end
+                    local label = tostring(item.content.type or "Content") .. ": " .. tostring(title)
+                    local font = math.min(11, (h - 6) / 2)
+                    if font >= 5 and w >= 25 then
+                        local maxCharacters = math.max(1, math.floor((w - 8) / (font * 0.65)))
+                        if #label > maxCharacters then label = label:sub(1, math.max(1, maxCharacters - 3)) .. "..." end
+                        svgText(doc, label, x + w / 2, y + h / 2 + font * 0.35, font)
+                    end
+                end
+            else skipped = skipped + 1 end
+        end
+        if skipped > 0 then svgText(doc, skipped .. " content window(s): geometry unavailable", width / 2, height - 2, 10) end
+    end
+    if workplace and contentState and contentState.error then
+        svgText(doc, contentState.data and "Content refresh failed - showing last update" or "Content unavailable", width / 2, 10, 10)
+    end
+    control.Legend = rapidjson.encode({ DrawChrome = false, IconData = Crypto.Base64Encode(doc:toString()) })
+end
+
+function funcUpdateWorkplaceChoices()
+    local used = {}
+    for _, workplace in pairs(selectedWorkplaces) do used[workplace.id] = true end
+    for index = 1, WORKPLACE_CONTROL_COUNT do
+        local collection = index <= WALL_CONTROL_COUNT and walls or desks
+        local selected = selectedWorkplaces[index]
+        local choices = { "(None)" }
+        for _, workplace in pairs(collection) do
+            if not used[workplace.id] or (selected and selected.id == workplace.id) then
+                table.insert(choices, workplaceChoice(workplace))
+            end
+        end
+        table.sort(choices)
+        local selector = funcGetWallControl("WallSelect", index)
+        selector.Choices = choices
+        -- Preserve the saved selection while discovery is pending.
+        if selected then selector.String = workplaceChoice(selected) end
+        local composition = funcGetWallControl("Compositions", index)
+        if composition then
+            composition.Choices = selected and compositionChoices or {}
+            if not selected then composition.String = "" end
+        end
+        funcGetWallControl("WallName", index).String = selected and selected.name or ""
+        drawWorkplaceDiagram(funcGetWallControl(index <= WALL_CONTROL_COUNT and "WallDiagram" or "DeskDiagram", index), selected, index <= WALL_CONTROL_COUNT, workplaceContentStates[index])
+        if index <= WALL_CONTROL_COUNT then
+            local geometry = selected and selected.wallGeometry or {}
+            local size, grid = geometry.sizePx or {}, geometry.grid or {}
+            funcGetWallControl("WallPxSize", index).String = selected and (tostring(size.width or 0) .. "x" .. tostring(size.height or 0)) or ""
+            funcGetWallControl("WallGridSize", index).String = selected and (tostring(grid.columns or 0) .. "x" .. tostring(grid.rows or 0)) or ""
+        else
+            local size = selected and selected.deskGeometry and selected.deskGeometry.sizeVpx
+            funcGetWallControl("DeskVpxSize", index).String = size and (tostring(size.width or 0) .. "x" .. tostring(size.height or 0) .. " vpx") or ""
+            local lines = {}
+            for number, display in ipairs(selected and selected.displays or {}) do
+                local geometry = display.geometry or {}
+                table.insert(lines, string.format("%d. %s | %s", number, display.connection or "", display.device or ""))
+                table.insert(lines, string.format("   %sx%s %s at (%s, %s)", tostring(geometry.width or 0), tostring(geometry.height or 0), geometry.type or "", tostring(geometry.x or 0), tostring(geometry.y or 0)))
+            end
+            funcGetWallControl("DeskDisplays", index).String = table.concat(lines, "\n")
+        end
+    end
+end
+
+function funcSelectWorkplace(index)
+    local selector = funcGetWallControl("WallSelect", index)
+    local collection = index <= WALL_CONTROL_COUNT and walls or desks
+    local selected
+    for _, workplace in pairs(collection) do
+        if selector.String == workplaceChoice(workplace) then selected = workplace; break end
+    end
+    for other, workplace in pairs(selectedWorkplaces) do
+        if other ~= index and selected and workplace.id == selected.id then
+            selector.String = selectedWorkplaces[index] and workplaceChoice(selectedWorkplaces[index]) or "(None)"
+            return
+        end
+    end
+    if selectedWorkplaces[index] ~= selected then
+        workplaceContentStates[index] = nil
+        selectionGenerations[index] = (selectionGenerations[index] or 0) + 1
+        pendingCompositionChoices[index], contentRequestInProgress[index] = nil, nil
+        if index <= WALL_CONTROL_COUNT then funcGetWallControl("Compositions", index).String = "" end
+        selectedWorkplaces[index] = selected
+        if index <= WALL_CONTROL_COUNT then
+            wallsByIndex[index] = selected
+            funcWallManagerDisconnect(index)
+            funcRefreshWallManager(index)
+        else
+            desksByIndex[index - WALL_CONTROL_COUNT] = selected
+        end
+    end
+    selector.String = selected and workplaceChoice(selected) or "(None)"
+    funcUpdateWorkplaceChoices()
+    funcGetWorkplaceContent(index)
+end
+
 function funcGetWorkplaces()
     if workplacesLoaded or workplacesRequestInProgress or accessToken == "" then
         return
@@ -871,7 +988,7 @@ function funcGetWorkplaces()
     workplacesRequestInProgress = true
     local generation = ctrlGeneration
 
-    local url = "https://" .. Controls.IP.String .. "/api/operate/v3/workplaces?type=Wall"
+    local url = "https://" .. Controls.IP.String .. "/api/operate/v3/workplaces"
     local token = accessToken
     print("Barco CTRL workplaces request: " .. url)
 
@@ -889,7 +1006,7 @@ function funcGetWorkplaces()
                 or responseCode >= 300 then
                 workplacesError = {
                     value = responseCode == 401 and 2 or 4,
-                    text = responseCode == 401 and "Unauthorized" or "Wall discovery failed"
+                    text = responseCode == 401 and "Unauthorized" or "Workplace discovery failed"
                 }
                 funcSetStatus(workplacesError.value, workplacesError.text)
                 compositionPollTimer:Start(TOKEN_RETRY_SECONDS)
@@ -903,67 +1020,23 @@ function funcGetWorkplaces()
 
             local decoded, response = pcall(rapidjson.decode, data)
             if not decoded or type(response) ~= "table" or type(response.data) ~= "table" then
-                workplacesError = { value = 4, text = "Invalid wall discovery response" }
+                workplacesError = { value = 4, text = "Invalid workplace discovery response" }
                 funcSetStatus(workplacesError.value, workplacesError.text)
                 compositionPollTimer:Start(TOKEN_RETRY_SECONDS)
                 print("Barco CTRL workplaces response was not valid JSON data")
                 return
             end
 
-            workplaces = {}
-            wallsByIndex = {}
-            for index = 1, WALL_CONTROL_COUNT do
-                funcGetWallControl("WallName", index).String = ""
-                funcGetWallControl("WallPxSize", index).String = ""
-                funcGetWallControl("WallGridSize", index).String = ""
-                funcGetWallControl("Compositions", index).Choices = {}
-            end
-
-            local wallIndex = 0
+            walls, desks = {}, {}
             for _, workplace in ipairs(response.data) do
-                if workplace.name and workplace.id then
-                    local size = workplace.wallGeometry and workplace.wallGeometry.sizePx or {}
-                    local grid = workplace.wallGeometry and workplace.wallGeometry.grid or {}
-                    workplaces[workplace.name] = {
-                        id = workplace.id,
-                        type = workplace.type,
-                        sizePx = {
-                            width = tonumber(size.width) or 0,
-                            height = tonumber(size.height) or 0
-                        },
-                        grid = {
-                            columns = tonumber(grid.columns) or 0,
-                            rows = tonumber(grid.rows) or 0
-                        }
-                    }
-
-                    wallIndex = wallIndex + 1
-                    if wallIndex <= WALL_CONTROL_COUNT then
-                        wallsByIndex[wallIndex] = workplaces[workplace.name]
-                        funcGetWallControl("WallName", wallIndex).String = workplace.name
-                        funcGetWallControl("WallPxSize", wallIndex).String = tostring(size.width or 0)
-                            .. "x" .. tostring(size.height or 0)
-                        funcGetWallControl("WallGridSize", wallIndex).String = tostring(grid.columns or 0)
-                            .. "x" .. tostring(grid.rows or 0)
-                    end
-
-                    print(
-                        "Barco CTRL workplace: " .. workplace.name
-                        .. " = " .. workplace.id
-                        .. " (" .. tostring(size.width or 0)
-                        .. "x" .. tostring(size.height or 0)
-                        .. ", " .. tostring(grid.columns or 0)
-                        .. "x" .. tostring(grid.rows or 0) .. " grid)"
-                    )
+                if workplace.name and workplace.id and (workplace.type == "Wall" or workplace.type == "Desk") then
+                    local collection = workplace.type == "Wall" and walls or desks
+                    collection[workplace.id] = workplace
                 end
             end
+            funcUpdateWorkplaceChoices()
 
-            for index = 1, WALL_CONTROL_COUNT do
-                if wallsByIndex[index] then
-                    funcGetWallControl("Compositions", index).Choices = compositionChoices
-                end
-            end
-
+            for index = 1, WORKPLACE_CONTROL_COUNT do funcSelectWorkplace(index) end
             workplacesLoaded = true
             workplacesError = nil
             compositionPollTimer:Start(COMPOSITION_POLL_SECONDS)
@@ -974,10 +1047,11 @@ function funcGetWorkplaces()
 end
 
 function funcRecallComposition(wallIndex, selectedChoice)
+    if wallIndex < 1 or wallIndex > WALL_CONTROL_COUNT then return end
     selectedChoice = selectedChoice or funcGetWallControl("Compositions", wallIndex).String
     local compositionName = compositionChoiceNames[selectedChoice]
     local composition = compositionName and compositions[compositionName]
-    local wall = wallsByIndex[wallIndex]
+    local wall = selectedWorkplaces[wallIndex]
 
     if not composition then
         print("Barco CTRL recall ignored: no valid composition selected for wall " .. wallIndex)
@@ -1001,9 +1075,13 @@ function funcRecallComposition(wallIndex, selectedChoice)
         return
     end
 
+    -- A GET started before this write must not overwrite post-recall feedback.
+    local previousContent = workplaceContentStates[wallIndex]
+    workplaceContentStates[wallIndex] = { data = previousContent and previousContent.data }
     contentRequestInProgress[wallIndex] = true
     pendingCompositionChoices[wallIndex] = nil
     local generation = ctrlGeneration
+    local selectionGeneration = selectionGenerations[wallIndex]
 
     local url = "https://" .. Controls.IP.String .. "/api/operate/v3/workplaces/" .. wall.id .. "/content"
     local body = rapidjson.encode({
@@ -1036,7 +1114,7 @@ function funcRecallComposition(wallIndex, selectedChoice)
             ["Content-Type"] = "application/json"
         },
         EventHandler = function(_, code, _, err)
-            if generation ~= ctrlGeneration then return end
+            if generation ~= ctrlGeneration or selectionGeneration ~= selectionGenerations[wallIndex] then return end
             contentRequestInProgress[wallIndex] = false
 
             local responseCode = tonumber(code)
@@ -1061,6 +1139,8 @@ function funcRecallComposition(wallIndex, selectedChoice)
 
             if pendingCompositionChoices[wallIndex] then
                 funcRecallComposition(wallIndex, pendingCompositionChoices[wallIndex])
+            else
+                funcGetWorkplaceContent(wallIndex)
             end
         end
     }
@@ -1357,6 +1437,11 @@ function funcCheckValueCompleteness()
     ctrlGeneration = ctrlGeneration + 1
     tokenRequestInProgress = false
     compositionRequestInProgress = false
+    workplaceContentStates = {}
+    sources = {}
+    sourcesLoaded = false
+    sourcesError = nil
+    sourcesRequestInProgress = false
     workplacesRequestInProgress = false
     tokenRefreshTimer:Stop()
     accessToken = ""
@@ -1367,17 +1452,12 @@ function funcCheckValueCompleteness()
     compositions = {}
     compositionChoiceNames = {}
     compositionChoices = {}
-    workplaces = {}
-    wallsByIndex = {}
+    walls, desks = {}, {}
+    selectedWorkplaces, selectionGenerations = {}, {}
+    wallsByIndex, desksByIndex = {}, {}
     contentRequestInProgress = {}
     pendingCompositionChoices = {}
-    for index = 1, WALL_CONTROL_COUNT do
-        funcGetWallControl("WallName", index).String = ""
-        funcGetWallControl("WallPxSize", index).String = ""
-        funcGetWallControl("WallGridSize", index).String = ""
-        funcGetWallControl("Compositions", index).Choices = {}
-        funcGetWallControl("Compositions", index).String = ""
-    end
+    funcUpdateWorkplaceChoices()
     funcRefreshWallManagers()
     if Controls.IP.String == "" or Controls.ClientID.String == "" or Controls.ClientSecret.String == "" then
         funcSetStatus(1, "incomplete")
@@ -1398,6 +1478,7 @@ if Controls then
 function Initialize()
 	-- Do initialization stuff here
     rapidjson = require("rapidjson")
+    EzSVG = require("EzSVG")
 
     ip = Controls.IP.String
     clientID = Controls.ClientID.String
@@ -1410,14 +1491,20 @@ function Initialize()
     ctrlGeneration = 0
     tokenRequestInProgress = false
     compositionRequestInProgress = false
+    workplaceContentStates = {}
+    sources = {}
+    sourcesLoaded = false
+    sourcesError = nil
+    sourcesRequestInProgress = false
     compositions = {}
     compositionChoiceNames = {}
     compositionChoices = {}
     workplacesRequestInProgress = false
     workplacesLoaded = false
     workplacesError = nil
-    workplaces = {}
-    wallsByIndex = {}
+    walls, desks = {}, {}
+    selectedWorkplaces, selectionGenerations = {}, {}
+    wallsByIndex, desksByIndex = {}, {}
     contentRequestInProgress = {}
     pendingCompositionChoices = {}
 
@@ -1426,6 +1513,8 @@ function Initialize()
     DEFAULT_TOKEN_LIFETIME_SECONDS = 600
     COMPOSITION_POLL_SECONDS = 60
     WALL_CONTROL_COUNT = math.ceil(tonumber(Properties["#Walls"].Value) or 1)
+    DESK_CONTROL_COUNT = Properties["#Desks"] and Properties["#Desks"].Value or 0
+    WORKPLACE_CONTROL_COUNT = WALL_CONTROL_COUNT + DESK_CONTROL_COUNT
     WALL_MANAGER_POLL_SECONDS = 60
     WALL_MANAGER_RETRY_SECONDS = 5
     WALL_MANAGER_SESSION_MARGIN_SECONDS = 60
@@ -1446,6 +1535,10 @@ function Initialize()
     end
 
     funcRegisterWallControlHandlers()
+    for index = 1, WORKPLACE_CONTROL_COUNT do
+        local slot = index
+        funcGetWallControl("WallSelect", slot).EventHandler = function() funcSelectWorkplace(slot) end
+    end
     tokenRefreshTimer.EventHandler = funcGetToken
     compositionPollTimer.EventHandler = funcPollCompositions
 
